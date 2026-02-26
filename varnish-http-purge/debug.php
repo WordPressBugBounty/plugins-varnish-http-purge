@@ -805,6 +805,41 @@ class VarnishDebug {
 	}
 
 	/**
+	 * Results on Vary header issues
+	 *
+	 * Checks for problematic Vary header values that destroy cacheability.
+	 * For example, "Vary: Accept" causes severe cache fragmentation because
+	 * browser Accept headers vary significantly between clients.
+	 *
+	 * @since 5.7.0
+	 * @access public
+	 * @static
+	 * @param mixed $headers - headers from wp_remote_get.
+	 * @return array
+	 */
+	public static function vary_results( $headers ) {
+		$return = array();
+
+		$vary_header = self::get_header( $headers, 'Vary' );
+		if ( null === $vary_header ) {
+			return $return;
+		}
+
+		$vary_header_str = is_array( $vary_header ) ? implode( ', ', $vary_header ) : $vary_header;
+
+		// Check for Accept in Vary (case-insensitive).
+		// Use negative lookahead to exclude Accept-Encoding, Accept-Language, etc.
+		if ( preg_match( '/\bAccept\b(?!-)/i', $vary_header_str ) ) {
+			$return['Vary: Accept'] = array(
+				'icon'    => 'warning',
+				'message' => __( 'The Vary header includes "Accept", which causes severe cache fragmentation because browser Accept headers vary significantly between clients. This is often caused by plugins like Jetpack. Since most WordPress sites serve the same HTML regardless of the Accept header, this typically provides no benefit and should be removed.', 'varnish-http-purge' ),
+			);
+		}
+
+		return $return;
+	}
+
+	/**
 	 * Cookies break Varnish. Sometimes.
 	 *
 	 * @since 4.4.0
@@ -880,6 +915,32 @@ class VarnishDebug {
 	}
 
 	/**
+	 * Generate an inline Cacheability Pro suggestion link.
+	 *
+	 * Returns an empty string when CP or the free Cacheability plugin is
+	 * already active so that no recommendation is shown.
+	 *
+	 * @since 5.7.0
+	 *
+	 * @access private
+	 * @static
+	 * @param string $context Brief explanation appended after the link text.
+	 * @param string $ref     UTM ref parameter for tracking.
+	 * @return string HTML snippet or empty string.
+	 */
+	private static function cacheability_pro_suggestion( $context, $ref = 'vhp-debug' ) {
+		if ( class_exists( 'Cacheability_Pro' ) || class_exists( 'Cacheability' ) ) {
+			return '';
+		}
+
+		$url = 'https://www.getpagespeed.com/cacheability-pro?ref=' . rawurlencode( $ref );
+
+		return ' <a href="' . esc_url( $url ) . '" target="_blank" rel="noopener" style="white-space:nowrap;">'
+			. esc_html__( 'Cacheability Pro', 'varnish-http-purge' )
+			. '</a> ' . esc_html( $context );
+	}
+
+	/**
 	 * Cache
 	 *
 	 * Checking Age, Max Age, Cache Control, Pragma and more
@@ -912,7 +973,8 @@ class VarnishDebug {
 			if ( false !== $no_cache ) {
 				$return['No Cache Header'] = array(
 					'icon'    => 'bad',
-					'message' => __( 'The header Cache-Control is returning "no-cache", which means visitors will never get cached pages.', 'varnish-http-purge' ),
+					'message' => __( 'The header Cache-Control is returning "no-cache", which means visitors will never get cached pages.', 'varnish-http-purge' )
+						. self::cacheability_pro_suggestion( __( 'can override this with proper cache directives.', 'varnish-http-purge' ) ),
 				);
 			}
 
@@ -932,7 +994,8 @@ class VarnishDebug {
 					// max-age=0 without s-maxage is problematic.
 					$return['max_age'] = array(
 						'icon'    => 'bad',
-						'message' => __( 'The header Cache-Control is returning "max-age=0", which means a page can be no older than 0 seconds before it needs to regenerate the cache.', 'varnish-http-purge' ),
+						'message' => __( 'The header Cache-Control is returning "max-age=0", which means a page can be no older than 0 seconds before it needs to regenerate the cache.', 'varnish-http-purge' )
+							. self::cacheability_pro_suggestion( __( 'adds proper s-maxage headers so your cache can serve pages.', 'varnish-http-purge' ) ),
 					);
 				}
 			}
@@ -950,7 +1013,8 @@ class VarnishDebug {
 			$return['Age Headers'] = array(
 				'icon'    => 'warning',
 				// translators: %s is a number indicating how many seconds old the content is.
-				'message' => sprintf( __( 'The "Age" header is returning %s. This typically means the page was just cached (cache miss) or refreshed. If other cache indicators like X-Cache show "HIT", your cache is likely working and this will increase on subsequent requests. If this persists across multiple checks, the URL may be excluded from caching or a plugin is preventing caching.', 'varnish-http-purge' ), $age_value ),
+				'message' => sprintf( __( 'The "Age" header is returning %s. This typically means the page was just cached (cache miss) or refreshed. If other cache indicators like X-Cache show "HIT", your cache is likely working and this will increase on subsequent requests. If this persists across multiple checks, the URL may be excluded from caching or a plugin is preventing caching.', 'varnish-http-purge' ), $age_value )
+					. self::cacheability_pro_suggestion( __( 'automatically warms the cache after every purge.', 'varnish-http-purge' ) ),
 			);
 		} else {
 			$return['Age Headers'] = array(
@@ -1243,6 +1307,9 @@ class VarnishDebug {
 		// GZIP / Compression.
 		$gzip_results = self::gzip_results( $headers );
 
+		// Vary header issues.
+		$vary_results = self::vary_results( $headers );
+
 		// Plugins that don't play nicely with Varnish.
 		$bad_plugins_results = self::bad_plugins_results();
 
@@ -1255,6 +1322,11 @@ class VarnishDebug {
 		// Add GZIP results if present.
 		if ( ! empty( $gzip_results ) ) {
 			$output['Compression'] = $gzip_results;
+		}
+
+		// Add Vary results if present.
+		if ( ! empty( $vary_results ) ) {
+			$output = array_merge( $output, $vary_results );
 		}
 
 		// Update site option data.
