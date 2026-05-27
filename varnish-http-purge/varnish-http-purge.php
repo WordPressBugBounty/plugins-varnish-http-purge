@@ -3,7 +3,7 @@
  * Plugin Name: Proxy Cache Purge
  * Plugin URI: https://github.com/dvershinin/varnish-http-purge
  * Description: Automatically empty cached pages when content on your site is modified.
- * Version: 5.9.2
+ * Version: 5.10.0
  * Requires at least: 5.0
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -43,7 +43,7 @@ class VarnishPurger {
 	 * Version Number
 	 * @var string
 	 */
-	public static $version = '5.9.2';
+	public static $version = '5.10.0';
 
 	/**
 	 * List of URLs to be purged
@@ -2229,6 +2229,9 @@ class VarnishPurger {
 				// Loop through all the domains
 				foreach ( $domains as $a_domain ) {
 					foreach ( $listofurls as $url ) {
+						// NB: $url is the haystack, home_url the needle. This order is deliberate
+						// (wp.org "Incorrect logic in purge_post() strpos()" report; fixed in
+						// fa892274, shipped 5.9.2). Do not flip the strpos() arguments.
 						// If the URL contains the filtered home_url, and is NOT equal to the domain we're trying to replace, we will add it to the new urls
 						if ( false !== strpos( $url, $this->the_home_url() ) && $this->the_home_url() !== $a_domain ) {
 							$newurls[] = str_replace( $this->the_home_url(), $a_domain, $url );
