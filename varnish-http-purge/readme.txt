@@ -2,7 +2,7 @@
 Contributors: Ipstenu, mikeschroder, techpriester, danielbachhuber, dvershinin
 Tags: proxy, purge, cache, varnish, nginx
 Requires at least: 5.0
-Tested up to: 7.0
+Tested up to: 7.1
 Stable tag: 5.12.3
 Requires PHP: 7.4
 License: Apache License 2.0
@@ -479,6 +479,11 @@ Security fix: the manual per-page purge action now only ever purges URLs on your
 Cron-mode (async purge queue) is no longer auto-enabled when `DISABLE_WP_CRON` is defined. If your site relied on that behaviour and you want to keep the async queue, add `define( 'VHP_ENABLE_CRON_PURGING', true );` to wp-config.php, or enable the option in the plugin settings. Most sites running system cron will be unaffected — synchronous purges are faster and avoid the stuck-queue class of bugs this release fixes.
 
 == Changelog ==
+
+= 5.13.0 (unreleased) =
+* New: Every PURGE response is assessed against the `Cache-Purge-Result` contract of nginx-module-cache-purge 2.6.1+. A tag purge counts as confirmed only when the endpoint reports the `tags` operation; a different operation is recorded as a mismatch and surfaced in the debug page and Site Health, because HTTP 200 alone never proves that tagged pages were invalidated.
+* New: `vhp_purge_result` action with the assessment of each PURGE response, and `vhp_purge_hosts` filter to add or replace PURGE targets.
+* Dev: Docker test harness gained an nginx + nginx-module-cache-purge arm (`tests/nginx`) so the plugin is proven against real nginx tag purges, not only Varnish.
 
 = 5.12.3 (2026-08) =
 * Fix: Multipage posts now purge every numbered page. 5.12.1 covered pages 2..N by asking the proxy for a wildcard purge of the post URL, which did not invalidate them on the reporter's setup. The plugin now purges the real page URLs (/your-post/2, /your-post/3, ...) with the same ordinary PURGE requests that already work for page 1, so it no longer depends on the proxy handling wildcards. Reported by @didierjm.
